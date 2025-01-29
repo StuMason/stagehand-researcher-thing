@@ -42,13 +42,15 @@ app.get('/health', (req, res) => {
 
 // Main browser automation endpoint
 app.post('/browser', validateRequest, async (req, res) => {
-  let stagehand;
-  const TIMEOUT = 60000; // Increased to 60 seconds
+  let stagehand = null;
+  let hasResponded = false;
   
-  const timeoutId = setTimeout(() => {
-    if (stagehand) stagehand.close().catch(console.error);
-    res.status(504).json({ error: 'Request timeout' });
-  }, TIMEOUT);
+  const sendResponse = (status, data) => {
+    if (!hasResponded) {
+      hasResponded = true;
+      res.status(status).json(data);
+    }
+  };
   
   try {
     // Initialize Stagehand
@@ -56,68 +58,73 @@ app.post('/browser', validateRequest, async (req, res) => {
     await stagehand.init();
     const page = stagehand.page;
     
-    // Navigate to the URL
+    console.log('Navigating to URL:', req.body.url);
     if (req.body.url) {
       await page.goto(req.body.url);
-      // Wait for network to be idle
       await page.waitForLoadState('networkidle');
+      console.log('Page loaded');
     }
     
-    // Perform actions if specified
     if (req.body.action) {
-      const actResult = await page.act({
+      console.log('Performing action:', req.body.action);
+      await page.act({
         action: req.body.action
       });
-      console.log('Action result:', actResult);
-      // Wait for navigation and network idle after action
       await page.waitForLoadState('networkidle');
+      console.log('Action completed');
     }
     
-    // Extract data if specified
+    let result = null;
+    
     if (req.body.extract) {
-      const data = await page.extract({
+      console.log('Extracting data');
+      result = await page.extract({
         instruction: req.body.extract,
         schema: z.object({
           result: z.string()
         })
       });
-      clearTimeout(timeoutId);
-      res.json(data);
+      console.log('Extraction completed');
     } else if (req.body.observe) {
-      const elements = await page.observe({
+      console.log('Observing elements');
+      result = await page.observe({
         instruction: req.body.observe
       });
-      clearTimeout(timeoutId);
-      res.json({ elements });
-    } else {
-      clearTimeout(timeoutId);
-      res.json({ status: 'success' });
+      console.log('Observation completed');
     }
     
+    // Close browser before sending response
+    if (stagehand) {
+      console.log('Closing browser');
+      await stagehand.close();
+      stagehand = null;
+    }
+    
+    sendResponse(200, result || { status: 'success' });
+    
   } catch (error) {
-    clearTimeout(timeoutId);
     console.error('Error:', {
       url: req.body.url,
       action: req.body.action,
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({ 
+    
+    // Close browser in case of error
+    if (stagehand) {
+      try {
+        await stagehand.close();
+      } catch (closeError) {
+        console.error('Error closing browser:', closeError);
+      }
+      stagehand = null;
+    }
+    
+    sendResponse(500, { 
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
-  } finally {
-    // Ensure we only close after we've sent the response
-    if (res.headersSent && stagehand) {
-      await stagehand.close().catch(console.error);
-    }
   }
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down...');
-  process.exit(0);
 });
 
 const HOST = '127.0.0.1';
