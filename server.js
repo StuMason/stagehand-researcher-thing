@@ -70,16 +70,8 @@ async function setupMonitor() {
     ]
   });
 
-  const auth = basicAuth({
-    users: { 
-      [process.env.ADMIN_USER || 'admin']: process.env.ADMIN_PASS || 'admin' 
-    },
-    challenge: true,
-    realm: 'Bull Monitor'
-  });
-
   await monitor.init();
-  app.use('/monitor', auth, monitor.router);
+  app.use('/monitor', monitor.router);
 }
 
 // Initialize the monitor
