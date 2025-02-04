@@ -1,13 +1,13 @@
 // services/researchService.js
-import { debugLog } from '../utils/logger.js';
-import { LinkedInService } from './linkedInService.js';
-import { searchGoogle } from './googleService.js';
-import { makeGPTCall } from './openaiService.js';
-import { parseAction } from '../utils/index.js';
-import { z } from 'zod';
+import { debugLog } from "../utils/logger.js";
+import { LinkedInService } from "./linkedInService.js";
+import { searchGoogle } from "./googleService.js";
+import { makeGPTCall } from "./openaiService.js";
+import { parseAction } from "../utils/index.js";
+import { z } from "zod";
 
 export async function conductResearch(stagehand, profile) {
-  debugLog('research:start', 'Starting research process', { profile });
+  debugLog("research:start", "Starting research process", { profile });
   const linkedIn = new LinkedInService(stagehand);
   let searchResults = [];
   let contactInformation = null;
@@ -33,8 +33,13 @@ Start by planning some Google searches about this person. Consider:
 
 What's your research plan?`;
 
-  debugLog('research:prompt', 'Sending planning prompt to GPT', { prompt: planningPrompt });
-  const researchPlan = await makeGPTCall([{ role: "user", content: planningPrompt }], 0.5);
+  debugLog("research:prompt", "Sending planning prompt to GPT", {
+    prompt: planningPrompt,
+  });
+  const researchPlan = await makeGPTCall(
+    [{ role: "user", content: planningPrompt }],
+    0.5
+  );
   let researchResults = { plan: researchPlan, findings: [] };
 
   try {
@@ -44,19 +49,23 @@ What's your research plan?`;
     let navigationFailures = 0;
 
     while (iteration < MAX_ITERATIONS && navigationFailures < 3) {
-      debugLog('research:iteration', `Starting iteration ${iteration}`, { 
+      debugLog("research:iteration", `Starting iteration ${iteration}`, {
         currentUrl,
         findingsCount: researchResults.findings.length,
         navigationFailures,
         searchResultsCount: searchResults.length,
-        contactFound: !!contactInformation
+        contactFound: !!contactInformation,
       });
 
       const executionPrompt = `Given these research results so far:
 ${JSON.stringify(researchResults, null, 2)}
 
-${searchResults.length > 0 ? `Recent search results:
-${JSON.stringify(searchResults.slice(-5), null, 2)}` : ''}
+${
+  searchResults.length > 0
+    ? `Recent search results:
+${JSON.stringify(searchResults.slice(-5), null, 2)}`
+    : ""
+}
 
 What should we look into next? Use one of these commands:
 - SEARCH: [query] - Search Google with this query
@@ -66,7 +75,7 @@ What should we look into next? Use one of these commands:
 - CONCLUDE - End research when sufficient information is gathered
 
 Current URL: ${currentUrl}
-Contact Information Found: ${contactInformation ? 'Yes' : 'No'}
+Contact Information Found: ${contactInformation ? "Yes" : "No"}
 
 IMPORTANT NOTES:
 - Prioritize finding contact information if not yet found
@@ -78,159 +87,218 @@ IMPORTANT NOTES:
 
 What would you like to do?`;
 
-      const decision = await makeGPTCall([{ role: "user", content: executionPrompt }], 0.3);
+      const decision = await makeGPTCall(
+        [{ role: "user", content: executionPrompt }],
+        0.3
+      );
       const action = parseAction(decision);
 
       if (!action) {
-        debugLog('research:warning', 'Failed to parse action, skipping iteration', { decision });
+        debugLog(
+          "research:warning",
+          "Failed to parse action, skipping iteration",
+          { decision }
+        );
         continue;
       }
 
-      if (action.type === 'conclude' && !contactInformation) {
-        debugLog('research:continue', 'Cannot conclude without contact information');
+      if (action.type === "conclude" && !contactInformation) {
+        debugLog(
+          "research:continue",
+          "Cannot conclude without contact information"
+        );
         continue;
       }
 
-      if (action.type === 'conclude') {
-        debugLog('research:conclude', 'GPT decided to conclude research');
+      if (action.type === "conclude") {
+        debugLog("research:conclude", "GPT decided to conclude research");
         break;
       }
 
       try {
         let result;
         switch (action.type) {
-          case 'search':
-            debugLog('research:search', 'Performing Google search', { query: action.query });
+          case "search":
+            debugLog("research:search", "Performing Google search", {
+              query: action.query,
+            });
             searchResults = await searchGoogle(stagehand.page, action.query);
-            result = { status: 'searched', query: action.query, results: searchResults };
+            result = {
+              status: "searched",
+              query: action.query,
+              results: searchResults,
+            };
             break;
 
-          case 'navigate':
-            result = await handleNavigation(stagehand, linkedIn, action, profile, currentUrl, contactInformation);
+          case "navigate":
+            result = await handleNavigation(
+              stagehand,
+              linkedIn,
+              action,
+              profile,
+              currentUrl,
+              contactInformation
+            );
             if (result.contactInfo) {
               contactInformation = result.contactInfo;
             }
-            if (result.status === 'failed') {
+            if (result.status === "failed") {
               navigationFailures++;
             }
             break;
 
-          case 'extract':
+          case "extract":
             result = await handleExtraction(stagehand, action);
             break;
 
-            case 'observe':
-                debugLog('research:observe', 'Observing page', { instruction: action.instruction });
-                result = await stagehand.page.observe({
-                  instruction: action.instruction
-                });
-                debugLog('research:observe-success', 'Successfully observed page', { result });
-                break;
-            }
-    
-            researchResults.findings.push({
-              iteration,
-              action: decision,
-              result
+          case "observe":
+            debugLog("research:observe", "Observing page", {
+              instruction: action.instruction,
             });
-    
-          } catch (error) {
-            debugLog('research:action-error', 'Error executing action', { 
-              error: error.message,
-              stack: error.stack,
-              action 
+            result = await stagehand.page.observe({
+              instruction: action.instruction,
             });
-            researchResults.findings.push({
-              iteration,
-              action: decision,
-              error: error.message
+            debugLog("research:observe-success", "Successfully observed page", {
+              result,
             });
-          }
-    
-          iteration++;
+            break;
         }
-    
-        const synthesis = await synthesizeResearch(researchResults, contactInformation);
-    
-        return {
-          profile: synthesis,
-          rawResearch: researchResults,
-          contactInformation
-        };
-    
-      } catch (error) {
-        debugLog('research:error', 'Fatal error in research process', { 
-          error: error.message,
-          stack: error.stack 
+
+        researchResults.findings.push({
+          iteration,
+          action: decision,
+          result,
         });
+      } catch (error) {
+        debugLog("research:action-error", "Error executing action", {
+          error: error.message,
+          stack: error.stack,
+          action,
+        });
+        researchResults.findings.push({
+          iteration,
+          action: decision,
+          error: error.message,
+        });
+      }
+
+      iteration++;
+    }
+
+    const synthesis = await synthesizeResearch(
+      researchResults,
+      contactInformation
+    );
+
+    return {
+      profile: synthesis,
+      rawResearch: researchResults,
+      contactInformation,
+    };
+  } catch (error) {
+    debugLog("research:error", "Fatal error in research process", {
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+}
+
+async function handleNavigation(
+  stagehand,
+  linkedIn,
+  action,
+  profile,
+  currentUrl,
+  contactInformation
+) {
+  debugLog("research:navigate", `Attempting to navigate to URL`, {
+    url: action.url,
+  });
+  try {
+    if (action.url.includes("linkedin.com")) {
+      try {
+        await withRetry(() =>  linkedIn.navigateToProfile(action.url, profile));
+        const contactInfo = await linkedIn.extractContactInfo();
+        return {
+          status: "navigated",
+          url: action.url,
+          contactInfo: contactInfo.contact,
+        };
+      } catch (error) {
+        if (error.message === "Profile does not match target person") {
+          debugLog("research:skip", "Skipping non-matching profile", {
+            url: action.url,
+          });
+          return {
+            status: "skipped",
+            url: action.url,
+            reason: "Profile does not match target person",
+          };
+        }
         throw error;
       }
-    }
-    
-    async function handleNavigation(stagehand, linkedIn, action, profile, currentUrl, contactInformation) {
-      debugLog('research:navigate', `Attempting to navigate to URL`, { url: action.url });
-      try {
-        if (action.url.includes('linkedin.com')) {
-          try {
-            await linkedIn.navigateToProfile(action.url, profile);
-            const contactInfo = await linkedIn.extractContactInfo();
-            return { 
-              status: 'navigated', 
-              url: action.url,
-              contactInfo: contactInfo.contact 
-            };
-          } catch (error) {
-            if (error.message === 'Profile does not match target person') {
-              debugLog('research:skip', 'Skipping non-matching profile', { url: action.url });
-              return { 
-                status: 'skipped', 
-                url: action.url,
-                reason: 'Profile does not match target person'
-              };
-            }
-            throw error;
-          }
-        } else {
-          await stagehand.page.goto(action.url, {
-            waitUntil: 'networkidle',
-            timeout: 30000
-          });
-          return { status: 'navigated', url: action.url };
-        }
-      } catch (error) {
-        debugLog('research:navigate-error', 'Navigation failed', { 
-          url: action.url,
-          error: error.message
-        });
-        return { 
-          status: 'failed', 
-          url: action.url,
-          error: error.message
-        };
-      }
-    }
-    
-    async function handleExtraction(stagehand, action) {
-      debugLog('research:extract', 'Extracting information', { instruction: action.instruction });
-      const result = await stagehand.page.extract({
-        instruction: action.instruction,
-        schema: z.object({
-          result: z.string()
-        })
+    } else {
+      await stagehand.page.goto(action.url, {
+        waitUntil: "networkidle",
+        timeout: 30000,
       });
-      debugLog('research:extract-success', 'Successfully extracted information', { result });
-      return result;
+      return { status: "navigated", url: action.url };
     }
-    
-    async function synthesizeResearch(researchResults, contactInformation) {
-      const synthesisPrompt = `Based on all our research:
+  } catch (error) {
+    debugLog("research:navigate-error", "Navigation failed", {
+      url: action.url,
+      error: error.message,
+    });
+    return {
+      status: "failed",
+      url: action.url,
+      error: error.message,
+    };
+  }
+}
+
+async function handleExtraction(stagehand, action) {
+  debugLog("research:extract", "Extracting information", {
+    instruction: action.instruction,
+  });
+  const result = await stagehand.page.extract({
+    instruction: action.instruction,
+    schema: z.object({
+      result: z.string(),
+    }),
+  });
+  debugLog("research:extract-success", "Successfully extracted information", {
+    result,
+  });
+  return result;
+}
+
+async function withRetry(fn, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.pow(2, attempt) * 1000)
+      );
+    }
+  }
+}
+
+async function synthesizeResearch(researchResults, contactInformation) {
+  const synthesisPrompt = `Based on all our research:
     ${JSON.stringify(researchResults, null, 2)}
     
     Create a comprehensive profile for this person. Structure it as follows:
     
     ---CONTACT INFORMATION---
-    ${contactInformation ? 'Found Contact Methods:' : 'Best Ways to Reach:'}
-    ${contactInformation || 'No direct contact information found. List available communication channels.'}
+    ${contactInformation ? "Found Contact Methods:" : "Best Ways to Reach:"}
+    ${
+      contactInformation ||
+      "No direct contact information found. List available communication channels."
+    }
     
     ---PROFESSIONAL PROFILE---
     1. Key findings and insights
@@ -249,6 +317,6 @@ What would you like to do?`;
     - Note potential areas for further research
     
     Format it in a natural, readable way using Markdown, ensuring contact information is prominently displayed first.`;
-    
-      return await makeGPTCall([{ role: "user", content: synthesisPrompt }], 0.7);
-    }
+
+  return await makeGPTCall([{ role: "user", content: synthesisPrompt }], 0.7);
+}
