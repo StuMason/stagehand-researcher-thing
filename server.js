@@ -4,7 +4,6 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import Queue from 'bull';
 import Redis from 'ioredis';
-import basicAuth from 'express-basic-auth';
 import pkg from '@bull-monitor/express';
 import rootPkg from '@bull-monitor/root/dist/bull-adapter.js';
 
@@ -40,7 +39,7 @@ const scrapingQueue = new Queue('scraping-queue', {
 });
 
 const StagehandConfig = {
-  env: "LOCAL",
+  env: process.env.BROWSERBASE_API_KEY ? "LOCAL" : "PRODUCTION",
   apiKey: process.env.BROWSERBASE_API_KEY,
   projectId: process.env.BROWSERBASE_PROJECT_ID,
   debugDom: true,
