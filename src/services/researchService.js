@@ -116,7 +116,7 @@ Return the data as a JSON object with keys: content (string), confidence (number
     if (discoveredInfo.length < 3) {
       const feedbackPrompt = `We have collected the following research findings:
 ${JSON.stringify(discoveredInfo)}
-This information seems insufficient. Suggest additional search queries or modifications to extract more comprehensive and relevant professional data about ${profile.name} in the context "${profile.context}". Provide a JSON array of queries.`;
+This information seems insufficient. Suggest additional search queries or modifications to extract more comprehensive and relevant professional data about ${profile.name} in the context "${profile.context}". Provide a JSON (AND JUST A JSON, no BACKTICKS OR TEXT BEFORE OR AFTER THIS IS GOING THROUGH A JSON PARSER) array of queries.`;
       let feedbackResponse = await makeGPTCall([{ role: "user", content: feedbackPrompt }]);
       let additionalQueries;
       try {
