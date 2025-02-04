@@ -53,3 +53,6 @@ curl -X POST http://localhost:3333/research \
 
 
 
+
+
+curl -X POST http://localhost:3333/research -H "Content-Type: application/json" -d '{"name": "Iggy Hammick","context": "Designer, founder of dark blue"}'

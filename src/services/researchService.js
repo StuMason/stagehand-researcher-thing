@@ -5,7 +5,6 @@ import { makeGPTCall } from "./openaiService.js";
 import { debugLog } from "../utils/logger.js";
 import { setupDialogHandling } from "../utils/dialogHandler.js";
 import { z } from "zod";
-import { sanitizeJsonOutput } from "../utils/sanitise.js";
 
 async function conductResearch(stagehand, profile) {
   debugLog("research:start", "Starting dynamic research process", { profile });
