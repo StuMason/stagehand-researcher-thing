@@ -22,7 +22,10 @@ async function conductResearch(stagehand, profile) {
     
 Profile: ${JSON.stringify(profile)}
     
-Generate a JSON array of 5-7 search queries that would help uncover professional information (LinkedIn profiles, contact details, news articles, bios, etc.) relevant to this individual and context.`;
+Generate a JSON array of 5 search queries that would help uncover professional information (LinkedIn profiles, contact details, news articles, bios, etc.) 
+relevant to this individual and context.
+(AND JUST A JSON, no BACKTICKS OR TEXT BEFORE OR AFTER THIS IS GOING THROUGH A JSON PARSER)
+`;
     let queryResponse = await makeGPTCall([{ role: "user", content: queryPrompt }]);
     let searchQueries;
     try {
@@ -82,7 +85,8 @@ Generate a JSON array of 5-7 search queries that would help uncover professional
           await stagehand.page.goto(result.url, { timeout: 30000, waitUntil: "domcontentloaded" });
           const extractionInstruction = `Extract professional information about ${profile.name} with context "${profile.context}".
 Include details such as current role, professional history, notable achievements, areas of expertise, and recent news.
-Return the data as a JSON object with keys: content (string), confidence (number), and type (one of 'profile', 'news', 'achievement', 'general').`;
+Return the data as a JSON object with keys: content (string), confidence (number), and type (one of 'profile', 'news', 'achievement', 'general').
+(AND JUST A JSON, no BACKTICKS OR TEXT BEFORE OR AFTER THIS IS GOING THROUGH A JSON PARSER)`;
           const pageInfo = await stagehand.page.extract({
             instruction: extractionInstruction,
             schema: z.object({
@@ -116,7 +120,9 @@ Return the data as a JSON object with keys: content (string), confidence (number
     if (discoveredInfo.length < 3) {
       const feedbackPrompt = `We have collected the following research findings:
 ${JSON.stringify(discoveredInfo)}
-This information seems insufficient. Suggest additional search queries or modifications to extract more comprehensive and relevant professional data about ${profile.name} in the context "${profile.context}". Provide a JSON (AND JUST A JSON, no BACKTICKS OR TEXT BEFORE OR AFTER THIS IS GOING THROUGH A JSON PARSER) array of queries.`;
+This information seems insufficient. Suggest additional search queries or modifications to extract more comprehensive and relevant professional data about ${profile.name} in the context "${profile.context}". 
+Provide a JSON array of queries.
+(AND JUST A JSON, no BACKTICKS OR TEXT BEFORE OR AFTER THIS IS GOING THROUGH A JSON PARSER)`;
       let feedbackResponse = await makeGPTCall([{ role: "user", content: feedbackPrompt }]);
       let additionalQueries;
       try {
