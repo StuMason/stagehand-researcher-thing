@@ -29,6 +29,29 @@ export const StagehandConfig = {
   },
   browserbaseSessionCreateParams: {
     projectId: process.env.BROWSERBASE_PROJECT_ID,
+    launchArgs: [
+      '--disable-extensions',              // Disable all extensions
+      '--disable-notifications',           // Block notification requests
+      '--disable-geolocation',            // Block location requests
+      '--disable-media-stream',           // Block mic/camera access
+      '--disable-webgl',                  // Disable WebGL
+      '--disable-speech-api',             // Disable speech recognition
+      '--disable-background-networking',   // Reduce background activity
+      '--no-default-browser-check',       // Skip default browser check
+      '--no-first-run',                   // Skip first run screens
+      '--disable-permissions-api',        // Disable permissions API
+      '--disable-background-timer-throttling', // Prevent throttling
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-site-isolation-trials',
+      '--disable-features=IsolateOrigins,site-per-process,TranslateUI',
+      '--disable-dev-shm-usage',         // Prevent shared memory issues
+      '--no-sandbox',                    // Disable sandbox for headless
+      '--disable-setuid-sandbox',
+      '--ignore-certificate-errors',     // Handle SSL issues
+      '--disable-web-security',          // Disable CORS for research
+      '--disable-popup-blocking'         // Handle popups ourselves
+    ]
   },
   browserbaseSessionID: undefined,
 };

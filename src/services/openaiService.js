@@ -1,6 +1,7 @@
 // services/openaiService.js
 import OpenAI from 'openai';
 import { debugLog } from '../utils/logger.js';
+import { sanitizeJsonOutput } from '../utils/sanitise.js';
 
 console.log('Initializing OpenAI client with config:', {
   hasApiKey: !!process.env.OPENAI_API_KEY,
@@ -51,7 +52,9 @@ export async function makeGPTCall(messages, temperature = 0.7, maxRetries = 3) {
         choicesLength: response.choices?.length
       });
 
-      return response.choices[0].message.content;
+      const rawResponse = response.choices[0].message.content;
+
+      return sanitizeJsonOutput(rawResponse);
 
     } catch (error) {
       console.error('OpenAI request failed:', {
