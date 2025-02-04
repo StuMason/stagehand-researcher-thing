@@ -1,128 +1,143 @@
-import express from 'express';
+import express from "express";
+import Queue from "bull";
+import rateLimit from "express-rate-limit";
+import { StagehandConfig, serverConfig } from "./src/config/index.js";
 import { Stagehand } from "@browserbasehq/stagehand";
-import { z } from 'zod';
-import dotenv from 'dotenv';
-import Queue from 'bull';
-import Redis from 'ioredis';
-import pkg from '@bull-monitor/express';
-import rootPkg from '@bull-monitor/root/dist/bull-adapter.js';
+import { z } from "zod";
+import { debugLog } from "./src/utils/logger.js";
+import conductResearch from "./src/services/researchService.js";
 
-const { BullMonitorExpress } = pkg;
-const { BullAdapter } = rootPkg;
-
-dotenv.config();
-
-// Redis client for storing job results
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD,
-});
-
-// Bull queue for job processing
-const scrapingQueue = new Queue('scraping-queue', {
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379,
-    password: process.env.REDIS_PASSWORD,
-  },
-  defaultJobOptions: {
-    removeOnComplete: 100, // Keep last 100 completed jobs
-    removeOnFail: 100,    // Keep last 100 failed jobs
-    timeout: 1200000,     // 20 minute timeout
-    attempts: 3,          // Retry failed jobs up to 3 times
-    backoff: {
-      type: 'exponential',
-      delay: 1000,        // Initial delay of 1 second
-    },
-  },
-});
-
-const StagehandConfig = {
-  env: process.env.BROWSERBASE_API_KEY ? "LOCAL" : "PRODUCTION",
-  apiKey: process.env.BROWSERBASE_API_KEY,
-  projectId: process.env.BROWSERBASE_PROJECT_ID,
-  debugDom: true,
-  headless: true,
-  logger: (message) => console.log(`${message.timestamp}::[stagehand:${message.category}] ${message.message}`),
-  domSettleTimeoutMs: 30000,
-  browserbaseSessionCreateParams: {
-    projectId: process.env.BROWSERBASE_PROJECT_ID,
-  },
-  enableCaching: true,
-  browserbaseSessionID: undefined,
-  modelName: "gpt-4o",
-  modelClientOptions: {
-    apiKey: process.env.OPENAI_API_KEY,
-  },
-};
-
-
+// Initialize Express app
 const app = express();
 app.use(express.json());
 
-// Setup Bull Monitor
-async function setupMonitor() {
-  const monitor = new BullMonitorExpress({
-    queues: [
-      new BullAdapter(scrapingQueue)
-    ]
-  });
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: { error: "Too many requests, please try again later" }
+});
 
-  await monitor.init();
-  app.use('/monitor', monitor.router);
-}
+app.use("/research", limiter);
 
-// Initialize the monitor
-setupMonitor().catch(console.error);
-
-// Validate request middleware
-const validateRequest = (req, res, next) => {
-  if (!req.body.url && !req.body.action && !req.body.extract && !req.body.observe) {
-    return res.status(400).json({ error: 'At least one operation must be specified' });
-  }
-  next();
-};
-
-// Create a new job
-app.post('/jobs', validateRequest, async (req, res) => {
-  try {
-    const job = await scrapingQueue.add(req.body, {
-      priority: req.body.priority || 0,  // Optional priority
-    });
-
-    res.status(202).json({ 
-      jobId: job.id,
-      status: 'pending',
-      statusUrl: `/jobs/${job.id}`
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+// Initialize research queue
+const researchQueue = new Queue("research-queue", serverConfig.redisUrl, {
+  defaultJobOptions: {
+    timeout: 1800000, // 30 minute timeout
+    attempts: 3,
+    backoff: {
+      type: "fixed",
+      delay: 5000
+    },
+    removeOnComplete: 100,
+    removeOnFail: 100
   }
 });
 
-// Get job status
-app.get('/jobs/:jobId', async (req, res) => {
+// Profile validation schema
+const ProfileSchema = z.object({
+  name: z.string().min(1),
+  context: z.string().min(1)
+});
+
+// Research job processor
+researchQueue.process(async (job) => {
+  const startTime = performance.now();
+  let stagehand = null;
+  
   try {
-    const job = await scrapingQueue.getJob(req.params.jobId);
+    stagehand = new Stagehand(StagehandConfig);
+    await stagehand.init();
+    
+    job.progress(10);
+    debugLog("research:start", "Starting research process", { profile: job.data });
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Processing timeout reached")), 600000); // 10-minute limit
+    });
+    
+    const results = await Promise.race([
+      conductResearch(stagehand, job.data),
+      timeoutPromise
+    ]);
+
+    job.progress(100);
+
+    const duration = performance.now() - startTime;
+    debugLog("research:complete", "Research completed successfully", {
+      duration,
+      profile: job.data
+    });
+
+    return results;
+
+  } catch (error) {
+    debugLog("research:error", "Error in research process", {
+      error: error.message,
+      stack: error.stack,
+      attempt: job.attemptsMade
+    });
+    throw error;
+
+  } finally {
+    if (stagehand) {
+      await stagehand.close().catch(console.error);
+    }
+  }
+});
+
+// POST endpoint to start research
+app.post("/research", async (req, res) => {
+  try {
+    const profile = ProfileSchema.parse(req.body);
+    
+    const job = await researchQueue.add(profile, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 2000
+      }
+    });
+
+    res.status(202).json({
+      jobId: job.id,
+      status: "processing",
+      statusUrl: `/research/${job.id}`,
+      estimatedTime: "5-15 minutes"
+    });
+
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ 
+        error: "Invalid input",
+        details: error.errors
+      });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// GET endpoint to check research status
+app.get("/research/:jobId", async (req, res) => {
+  try {
+    const job = await researchQueue.getJob(req.params.jobId);
     if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
+      return res.status(404).json({ error: "Job not found" });
     }
 
     const state = await job.getState();
-    const result = await redis.get(`job:${job.id}:result`);
-    const error = await redis.get(`job:${job.id}:error`);
+    const progress = job.progress();
 
     res.json({
       jobId: job.id,
       status: state,
-      result: result ? JSON.parse(result) : null,
-      error: error ? JSON.parse(error) : null,
-      progress: job.progress(),
+      progress: progress,
+      result: job.returnvalue,
+      error: job.failedReason,
       timestamp: {
         created: job.timestamp,
         started: job.processedOn,
-        finished: job.finishedOn,
+        finished: job.finishedOn
       }
     });
   } catch (error) {
@@ -130,165 +145,13 @@ app.get('/jobs/:jobId', async (req, res) => {
   }
 });
 
-// List all jobs with pagination
-app.get('/jobs', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const status = req.query.status;
-    
-    let jobs;
-    switch (status) {
-      case 'completed':
-        jobs = await scrapingQueue.getCompleted();
-        break;
-      case 'failed':
-        jobs = await scrapingQueue.getFailed();
-        break;
-      case 'active':
-        jobs = await scrapingQueue.getActive();
-        break;
-      case 'waiting':
-        jobs = await scrapingQueue.getWaiting();
-        break;
-      default:
-        jobs = await scrapingQueue.getJobs();
-    }
-
-    const start = (page - 1) * limit;
-    const paginatedJobs = jobs.slice(start, start + limit);
-
-    const jobsWithState = await Promise.all(
-      paginatedJobs.map(async (job) => ({
-        jobId: job.id,
-        status: await job.getState(),
-        timestamp: {
-          created: job.timestamp,
-          started: job.processedOn,
-          finished: job.finishedOn,
-        }
-      }))
-    );
-
-    res.json({
-      jobs: jobsWithState,
-      pagination: {
-        total: jobs.length,
-        page,
-        limit,
-        pages: Math.ceil(jobs.length / limit)
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  await researchQueue.close();
+  server.close();
 });
 
-// Cancel a job
-app.delete('/jobs/:jobId', async (req, res) => {
-  try {
-    const job = await scrapingQueue.getJob(req.params.jobId);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    await job.remove();
-    await redis.del(`job:${job.id}:result`);
-    await redis.del(`job:${job.id}:error`);
-
-    res.json({ message: 'Job cancelled successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Process jobs
-scrapingQueue.process(async (job, done) => {
-  let stagehand = null;
-
-  try {
-    job.progress(0);
-    stagehand = new Stagehand(StagehandConfig);
-    await stagehand.init();
-    const page = stagehand.page;
-    
-    job.progress(20);
-    
-    if (job.data.url) {
-      await page.goto(job.data.url);
-      await page.waitForLoadState('networkidle');
-    }
-    
-    job.progress(40);
-    
-    if (job.data.action) {
-      await page.act({
-        action: job.data.action
-      });
-      await page.waitForLoadState('networkidle');
-    }
-    
-    job.progress(60);
-    
-    let result = null;
-    
-    if (job.data.extract) {
-      result = await page.extract({
-        instruction: job.data.extract,
-        schema: z.object({
-          result: z.string()
-        })
-      });
-    } else if (job.data.observe) {
-      result = await page.observe({
-        instruction: job.data.observe
-      });
-    }
-
-    job.progress(80);
-
-    // Store result in Redis
-    await redis.set(
-      `job:${job.id}:result`, 
-      JSON.stringify(result),
-      'EX',
-      86400 // Expire after 24 hours
-    );
-
-    job.progress(100);
-    done(null, result);
-
-  } catch (error) {
-    // Store error in Redis
-    await redis.set(
-      `job:${job.id}:error`,
-      JSON.stringify({ message: error.message, stack: error.stack }),
-      'EX',
-      86400 // Expire after 24 hours
-    );
-    done(error);
-  } finally {
-    if (stagehand) {
-      await stagehand.close();
-    }
-  }
-});
-
-// Handle queue events
-scrapingQueue.on('completed', (job, result) => {
-  console.log(`Job ${job.id} completed`);
-});
-
-scrapingQueue.on('failed', (job, error) => {
-  console.error(`Job ${job.id} failed:`, error);
-});
-
-scrapingQueue.on('stalled', (job) => {
-  console.warn(`Job ${job.id} stalled`);
-});
-
-const HOST = '127.0.0.1';
-const PORT = process.env.PORT || 3333;
-app.listen(PORT, HOST, () => {
-  console.log(`Server running on ${HOST}:${PORT}`);
+// Start server
+const server = app.listen(serverConfig.port, serverConfig.host, () => {
+  console.log(`Research server running on ${serverConfig.host}:${serverConfig.port}`);
 });
