@@ -6,6 +6,11 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import { z } from "zod";
 import { debugLog } from "./src/utils/logger.js";
 import conductResearch from "./src/services/researchService.js";
+import pkg from '@bull-monitor/express';
+import rootPkg from '@bull-monitor/root/dist/bull-adapter.js';
+
+const { BullMonitorExpress } = pkg;
+const { BullAdapter } = rootPkg;
 
 // Initialize Express app
 const app = express();
@@ -33,6 +38,19 @@ const researchQueue = new Queue("research-queue", serverConfig.redisUrl, {
     removeOnFail: 100
   }
 });
+
+async function setupMonitor() {
+  const monitor = new BullMonitorExpress({
+    queues: [
+      new BullAdapter(researchQueue)
+    ]
+  });
+  await monitor.init();
+  app.use('/monitor', monitor.router);
+}
+// Initialize the monitor
+setupMonitor().catch(console.error);
+
 
 // Profile validation schema
 const ProfileSchema = z.object({
