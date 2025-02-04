@@ -8,7 +8,7 @@ export const StagehandConfig = {
   apiKey: process.env.BROWSERBASE_API_KEY,
   projectId: process.env.BROWSERBASE_PROJECT_ID,
   debugDom: process.env.NODE_ENV !== 'production',
-  headless: true,
+  headless: process.env.NODE_ENV === 'production',
   logger: (message) => {
     if (process.env.NODE_ENV !== 'production') {
       console.log(JSON.stringify({
