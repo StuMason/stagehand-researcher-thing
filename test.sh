@@ -6,7 +6,6 @@ curl -X POST http://localhost:3333/browser \
     "extract": "get all the content from the page"
 }'
 
-
 curl -X POST http://localhost:3333/research \
   -H "Content-Type: application/json" \
   -d '{
@@ -34,25 +33,3 @@ curl -X POST http://localhost:3333/research \
     "name": "Daniel Ruffles",
     "context": "UK based brand and design expert"
   }'
-
-
-  curl -X POST http://localhost:3333/research \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Stu Mason",
-    "context": "UK based web developer"
-  }'
-
-
-    curl -X POST http://localhost:3333/research \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Emi Laughton",
-    "context": "Aviva Marketing Lead"
-  }'
-
-
-
-
-
-curl -X POST http://localhost:3333/research -H "Content-Type: application/json" -d '{"name": "Iggy Hammick","context": "Designer, founder of dark blue"}'

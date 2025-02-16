@@ -1,41 +1,108 @@
-# 🤘 Welcome to Stagehand!
+# Stagehand Research Tool
 
-Hey! This is a project built with [Stagehand](https://github.com/browserbase/stagehand).
+This project is built with [Stagehand](https://github.com/browserbase/stagehand) and is designed to automate research tasks using browser interactions.
 
-You can build your own web agent using: `npx create-browser-app`!
+## Overview
 
-## Setting the Stage
+The Stagehand Research Tool allows you to perform automated research by leveraging AI and browser automation. It can search for profiles, extract relevant information, and navigate through various web pages seamlessly.
 
-Stagehand is an SDK for automating browsers. It's built on top of [Playwright](https://playwright.dev/) and provides a higher-level API for better debugging and AI fail-safes.
+## Features
 
-## Curtain Call
+- **Automated Browser Interactions**: Utilize Playwright's capabilities to automate browser tasks.
+- **AI-Powered Research**: Integrate with AI models to enhance data extraction and decision-making.
+- **Dynamic Query Handling**: Automatically generate additional queries based on initial findings to improve research depth.
+- **Error Handling and Logging**: Robust error handling and logging mechanisms to track the research process.
+- **Redis Queues with Bull**: Efficiently manage and process research jobs using Redis and Bull.
 
-Get ready for a show-stopping development experience. Just run:
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (version 14 or higher)
+- NPM (Node Package Manager)
+- Redis (for queue management)
+
+### Installation
+
+1. Clone the repository:
 
 ```bash
-npm install && npm start
+git clone https://github.com/browserbase/stagehand-research-tool.git
+cd stagehand-research-tool
 ```
 
-## What's Next?
-
-### Add your API keys
-
-Required API keys/environment variables are in the `.env.example` file. Copy it to `.env` and add your API keys.
+2. Install the dependencies:
 
 ```bash
-cp .env.example .env && nano .env # Add your API keys to .env
+npm install
 ```
 
-### Custom .cursorrules
+3. Set up your environment variables by copying the example file:
 
-We have custom .cursorrules for this project. It'll help quite a bit with writing Stagehand easily.
+```bash
+cp .env.example .env
+```
 
-### Run on Browserbase
+Add your API keys to the `.env` file.
 
-To run on Browserbase, add your API keys to .env and change `env: "LOCAL"` to `env: "BROWSERBASE"` in [stagehand.config.ts](stagehand.config.ts).
+### Running the Tool
 
-### Use Anthropic Claude 3.5 Sonnet
+To start the research tool, run:
 
-1. Add your API key to .env
-2. Change `modelName: "gpt-4o"` to `modelName: "claude-3-5-sonnet-latest"` in [stagehand.config.ts](stagehand.config.ts)
-3. Change `modelClientOptions: { apiKey: process.env.OPENAI_API_KEY }` to `modelClientOptions: { apiKey: process.env.ANTHROPIC_API_KEY }` in [stagehand.config.ts](stagehand.config.ts)
+```bash
+npm start
+```
+
+This will initialize the Stagehand instance and begin the research process as defined in the `main()` function.
+
+### API Endpoints
+
+The server exposes several endpoints for conducting research:
+
+- **Research a Profile**: 
+  - **Endpoint**: `POST /research`
+  - **Request Body**:
+    ```json
+    {
+      "name": "Profile Name",
+      "context": "Profile Context"
+    }
+    ```
+### Example Usage
+
+You can use the tool to research profiles by sending a POST request to the `/research` endpoint with the required data. For example:
+
+```bash
+curl -X POST http://localhost:3333/research \
+-H "Content-Type: application/json" \
+-d '{
+"name": "Iggy Hammick",
+"context": "Designer, founder of dark blue"
+}'
+```
+
+### Monitoring the Research Process
+
+You can monitor the research process by viewing the logs in the terminal. The tool logs information about the research process, including the queries being executed, the data being extracted, and any errors encountered.
+
+## Queue Management
+
+The research tool uses Redis and Bull for queue management. You can monitor the queue and view the status of the jobs by accessing the Bull dashboard.
+
+To access the Bull dashboard, goto `http://localhost:3333/monitor` in your browser.
+### Customization
+
+You can customize the behavior of the research tool by modifying the configuration in `stagehand.config.ts` and adjusting the logic in `src/services/researchService.js`.
+
+### Contributing
+
+We welcome contributions! If you have suggestions or improvements, please create an issue or submit a pull request.
+
+### License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## 🤘 Thanks for using the Stagehand Research Tool!
+
+Create an issue if you have any feedback: [GitHub Issues](https://github.com/browserbase/stagehand/issues/new)
